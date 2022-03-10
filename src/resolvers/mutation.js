@@ -1,0 +1,160 @@
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const mongoose = require('mongoose');
+const {
+  AuthenticationError,
+  ForbiddenError,
+} = require('apollo-server-express');
+require('dotenv').config();
+
+const gravatar = require('../util/gravatar');
+
+module.exports = {
+  newNote: async (parent, args, { models, user }) => {
+    // If there is no user on the context, throw an authenticaiton error
+    if (!user) {
+      throw new AuthenticationError('You must be signed in to create a note');
+    }
+    return await models.Note.create({
+      content: args.content,
+      author: mongoose.Types.ObjectId(user.id),
+    });
+  },
+  deleteNote: async (parent, { id }, { models, user }) => {
+    // If not a user, throw an Authentication Error
+    if (!user) {
+      throw new AuthenticationError('You must be signed in to delete a note');
+    }
+
+    // Find the note
+    const note = await models.Note.findById(id);
+    // If the note owner and current user don't match, throw a forbidden error
+    if (note && String(note.author) !== user.id) {
+      throw new ForbiddenError(
+        "You don't have permissions to delete this note"
+      );
+    }
+
+    try {
+      // If everyhting checks out, remove the note
+      await note.remove();
+      return true;
+    } catch (err) {
+      // If there's an error along the way, return false
+      return false;
+    }
+  },
+  updateNote: async (parent, { content, id }, { models, user }) => {
+    // If not a user, throw an Authentication Error
+    if (!user) {
+      throw new AuthenticationError('You must be signed in to delete a note');
+    }
+    // Find the note
+    const note = await models.Note.findById(id);
+    // If the note owner and current user don't match, throw a forbidden error
+    if (note && String(note.author) !== user.id) {
+      throw new ForbiddenError(
+        "You don't have permissions to update this note"
+      );
+    }
+
+    // Update the note in the db and return the updated note
+    return await models.Note.findOneAndUpdate(
+      {
+        _id: id,
+      },
+      {
+        $set: {
+          content,
+        },
+      },
+      {
+        new: true,
+      }
+    );
+  },
+  signUp: async (parent, { username, email, password }, { models }) => {
+    // Normalize email address
+    email = email.trim().toLowerCase();
+    // Hash the password
+    const hashed = await bcrypt.hash(password, 10);
+    // create gravatar url
+    const avatar = gravatar(email);
+    try {
+      const user = await models.User.create({
+        username,
+        email,
+        avatar,
+        password: hashed,
+      });
+      return jwt.sign({ id: user._id }, process.env.JWT_SECRET);
+    } catch (err) {
+      console.log(err);
+      // if there's a problem creating the accoun, throw an error
+      throw new Error('Error creating account');
+    }
+  },
+  signIn: async (parent, { username, email, password }, { models }) => {
+    // Normalize email address
+    email = email.trim().toLowerCase();
+    // Find a user
+    const user = await models.User.findOne({
+      $or: [{ email }, { username }],
+    });
+    if (!user) {
+      throw new AuthenticationError('Could not find username');
+    }
+
+    // If passwords don't match, through an authentication error
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      throw new AuthenticationError('Incorrect password');
+    }
+    //create and return the json web token
+    return jwt.sign({ id: user._id }, process.env.JWT_SECRET);
+  },
+  toggleFavorite: async (parent, { id }, { models, user }) => {
+    if (!user) {
+      throw new AuthenticationError();
+    }
+    // Check to see if the user has already favorited the note
+    let noteCheck = await models.Note.findById(id);
+    const hasUser = noteCheck.favoritedBy.indexOf(user.id);
+
+    // If the user exists in the list,
+    // add them to the list and increment the favorite count by 1
+    if (hasUser >= 0) {
+      return await models.Note.findByIdAndUpdate(
+        id,
+        {
+          $pull: {
+            favoritedBy: mongoose.Types.ObjectId(user.id),
+          },
+          $inc: {
+            favoriteCount: -1,
+          },
+        },
+        {
+          new: true,
+        }
+      );
+    } else {
+      // If the user doesn't exist in the list
+      // add them to the list and incrment the favorite count by 1
+      return await models.Note.findByIdAndUpdate(
+        id,
+        {
+          $pull: {
+            favoritedBy: mongoose.Types.ObjectId(user.id),
+          },
+          $inc: {
+            favoriteCount: 1,
+          },
+        },
+        {
+          new: true,
+        }
+      );
+    }
+  },
+};

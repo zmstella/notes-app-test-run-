@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../../superchat-app"
+		}
+	],
+	"settings": {
+		"eslint.alwaysShowStatus": true
+	}
+}
