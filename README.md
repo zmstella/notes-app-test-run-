@@ -6,4 +6,4 @@ Built with guidance from Adam D. Scott's [*JavaScript Everywhere.*](https://gith
 
 ## 4/27/22: 
 
-Schemas and DBs ready. Now to connect them to React!
+Schemas, Models, and Resolvers ready. Now to connect them to React!
